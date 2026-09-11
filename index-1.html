@@ -1,0 +1,1644 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Batalha de Pipa — Arena Live 9:16</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  :root {
+    --sky-top: #142850;
+    --sky-mid: #3a6ea5;
+    --sky-horizon: #f4a261;
+    --panel: #10223dcc;
+    --panel-border: #ffffff22;
+    --ink: #fff8ec;
+    --ink-dim: #ffe9c7aa;
+    --gold: #ffd166;
+    --red: #e63946;
+    --green: #06d6a0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; background: #070d19; color: var(--ink); display: flex; }
+
+  /* PAINEL LATERAL DE ADMIN (FORA DA ÁREA DA LIVE) */
+  #admin-sidebar {
+    width: 320px;
+    background: #0f1c2e;
+    border-right: 2px solid var(--panel-border);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    z-index: 10;
+    overflow-y: auto;
+  }
+
+  .brand {
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 800;
+    font-size: 18px;
+    color: var(--ink);
+  }
+  .brand small { display: block; font-family: 'Inter'; font-weight: 500; font-size: 11px; color: var(--ink-dim); }
+
+  .admin-box {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .admin-box label { font-size: 11px; color: var(--ink-dim); font-weight: 600; }
+
+  .connect-status { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 4px; }
+  .status-dot { width: 9px; height: 9px; border-radius: 50%; background: #888; flex-shrink: 0; }
+  .status-dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .status-dot.off { background: var(--red); }
+
+  input {
+    background: #ffffff15;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 8px;
+    color: var(--ink);
+    font-size: 13px;
+    outline: none;
+  }
+
+  .btn {
+    font-family: 'Inter'; font-weight: 600; font-size: 12px; border: none; border-radius: 6px;
+    padding: 8px; cursor: pointer; transition: filter .12s ease;
+  }
+  .btn-primary { background: var(--gold); color: #1a1200; }
+  .btn-ghost { background: #ffffff18; color: var(--ink); }
+  .btn-danger { background: var(--red); color: white; }
+  .btn:hover { filter: brightness(1.1); }
+
+  /* ÁREA DO JOGO (TELA DE TRANSMISSÃO 9:16) */
+  #game-wrapper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #040811;
+    position: relative;
+  }
+
+  #game-container {
+    position: relative;
+    height: 99.5vh;
+    aspect-ratio: 9 / 16;
+    background: #142850;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 0 30px #000000aa;
+  }
+
+  #sky { width: 100%; height: 100%; display: block; }
+
+  /* OVERLAYS DENTRO DA ARENA 9:16 */
+  .hud-overlay { position: absolute; inset: 0; pointer-events: none; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; }
+
+  .leaderboard {
+    align-self: flex-end; width: 160px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px;
+    padding: 8px; backdrop-filter: blur(6px);
+  }
+  .leaderboard h3 { margin: 0 0 4px; font-family: 'Baloo 2'; font-size: 12px; color: var(--gold); }
+  .lb-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 10.5px; color: var(--ink); }
+  .lb-rank { width: 12px; color: var(--ink-dim); font-weight: 700; }
+  .lb-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+  .lb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-cuts { color: var(--ink-dim); }
+  .lb-empty { color: var(--ink-dim); font-size: 10px; }
+
+  .toasts { position: absolute; left: 12px; bottom: 12px; display: flex; flex-direction: column-reverse; gap: 4px; width: 180px; }
+  .toast {
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 6px;
+    padding: 6px 8px; font-size: 10px; color: var(--ink); backdrop-filter: blur(6px);
+    animation: toastIn .25s ease, toastOut .4s ease 3.6s forwards;
+  }
+  .toast b { color: var(--gold); }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes toastOut { to { opacity: 0; transform: translateY(-6px); } }
+
+  /* COMBO / STREAK NO CANTO SUPERIOR */
+  .combo-wrap { align-self: center; text-align: center; pointer-events: none; }
+  .combo-wrap .combo-txt {
+    font-family: 'Baloo 2'; font-weight: 800; color: var(--gold);
+    text-shadow: 0 0 10px #00000090; font-size: 15px; opacity: 0; transform: scale(.7);
+    transition: opacity .15s ease, transform .15s ease;
+  }
+  .combo-wrap .combo-txt.show { opacity: 1; transform: scale(1); }
+
+  /* ============================================================
+     ABAS DO PAINEL (Controle / Configurações)
+  ============================================================ */
+  .tabs { display: flex; gap: 6px; background: #ffffff10; padding: 4px; border-radius: 10px; }
+  .tab-btn {
+    flex: 1; background: transparent; border: none; color: var(--ink-dim);
+    font-family: 'Inter'; font-weight: 700; font-size: 12px; padding: 8px 6px;
+    border-radius: 7px; cursor: pointer; transition: background .12s ease, color .12s ease;
+  }
+  .tab-btn.active { background: var(--gold); color: #1a1200; }
+  .tab-panel { display: none; flex-direction: column; gap: 14px; }
+  .tab-panel.active { display: flex; }
+
+  /* CONTROLES DE CONFIGURAÇÃO (sliders, linhas de presente) */
+  .cfg-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+  .cfg-row span.val { color: var(--gold); font-weight: 700; min-width: 40px; text-align: right; }
+  input[type="range"] {
+    -webkit-appearance: none; width: 100%; height: 5px; border-radius: 4px;
+    background: #ffffff22; outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%;
+    background: var(--gold); cursor: pointer; border: 2px solid #1a1200aa;
+  }
+  input[type="number"] { width: 68px; text-align: center; }
+  .cfg-tier {
+    display: flex; align-items: center; gap: 8px; background: #ffffff0c;
+    border-radius: 8px; padding: 6px 8px;
+  }
+  .cfg-tier .tier-icon { font-size: 15px; width: 20px; text-align: center; }
+  .cfg-tier .tier-label { flex: 1; font-size: 11.5px; color: var(--ink); }
+  .cfg-tier .tier-hint { font-size: 9.5px; color: var(--ink-dim); }
+
+  /* CATÁLOGO DE PRESENTES DO TIKTOK */
+  .gift-catalog { max-height: 210px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 2px; }
+  .gift-catalog::-webkit-scrollbar { width: 5px; }
+  .gift-catalog::-webkit-scrollbar-thumb { background: #ffffff30; border-radius: 4px; }
+  .gift-row {
+    display: flex; align-items: center; gap: 8px; padding: 5px 7px;
+    background: #ffffff08; border-radius: 6px; font-size: 11px;
+  }
+  .gift-row .gift-emoji { font-size: 14px; width: 18px; text-align: center; }
+  .gift-row .gift-name { flex: 1; color: var(--ink); }
+  .gift-row .gift-diamonds { color: var(--ink-dim); font-size: 10px; min-width: 44px; text-align: right; }
+  .gift-row .gift-tier {
+    font-size: 9.5px; font-weight: 700; padding: 2px 6px; border-radius: 20px;
+    white-space: nowrap;
+  }
+  .tier-cura { background: #06d6a030; color: var(--green); }
+  .tier-linha { background: #ff2d5530; color: #ff6b8a; }
+  .tier-escudo { background: #4cc9f030; color: #4cc9f0; }
+  .tier-explosao { background: #ffd16630; color: var(--gold); }
+  .cfg-note { font-size: 9.5px; color: var(--ink-dim); line-height: 1.4; }
+
+  /* FLASH DE TELA (rajada / explosão) */
+  .screen-flash {
+    position: absolute; inset: 0; background: #ffffff; opacity: 0; pointer-events: none;
+    mix-blend-mode: overlay;
+  }
+
+  /* ============================================================
+     TELA DE CHAVE (bloqueia o app até ativar uma licença válida)
+  ============================================================ */
+  #lockScreen {
+    position: fixed; inset: 0; z-index: 1000;
+    background: radial-gradient(circle at 50% 30%, #142850, #040811 75%);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink);
+  }
+  #lockScreen.hidden { display: none; }
+  .lock-card {
+    width: 320px; background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 26px; text-align: center;
+    box-shadow: 0 0 40px #000000aa;
+  }
+  .lock-card .lock-icon { font-size: 34px; margin-bottom: 8px; }
+  .lock-card h2 { font-family: 'Baloo 2'; font-size: 18px; margin-bottom: 4px; }
+  .lock-card p.lock-sub { font-size: 12px; color: var(--ink-dim); margin-bottom: 18px; }
+  .lock-card input {
+    width: 100%; text-align: center; letter-spacing: 1px; font-size: 14px;
+    margin-bottom: 10px; text-transform: uppercase;
+  }
+  .lock-card button { width: 100%; margin-top: 4px; padding: 10px; font-size: 13px; }
+  .lock-error { color: var(--red); font-size: 11.5px; margin-top: 10px; min-height: 14px; }
+  .lock-expiry { color: var(--ink-dim); font-size: 10.5px; margin-top: 14px; }
+  #appRoot { display: none; width: 100%; height: 100%; }
+  #appRoot.unlocked { display: flex; }
+</style>
+</head>
+<body>
+
+  <!-- TELA DE CHAVE: precisa de uma licença ativa pra usar o programa -->
+  <div id="lockScreen">
+    <div class="lock-card">
+      <div class="lock-icon">🔒</div>
+      <h2>Área bloqueada</h2>
+      <p class="lock-sub">Digite sua chave de licença para liberar o programa.</p>
+      <input id="lockKeyInput" type="text" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" />
+      <button class="btn btn-primary" id="lockUnlockBtn">Desbloquear</button>
+      <div class="lock-error" id="lockError"></div>
+      <div class="lock-expiry" id="lockExpiry"></div>
+    </div>
+  </div>
+
+  <!-- APP (só aparece depois da chave validada) -->
+  <div id="appRoot">
+
+  <!-- PAINEL LATERAL ESQUERDO (Apenas você vê, fora da captura do OBS) -->
+  <div id="admin-sidebar">
+    <div class="brand">🪁 Batalha de Pipa<small>Painel do Transmissor</small></div>
+
+    <div class="tabs">
+      <button class="tab-btn active" id="tabBtnControle">🎮 Controle</button>
+      <button class="tab-btn" id="tabBtnConfig">⚙️ Configurações</button>
+    </div>
+
+    <!-- ====================== ABA: CONTROLE ====================== -->
+    <div class="tab-panel active" id="panelControle">
+      <div class="admin-box">
+        <label>Conexão com a Live do TikTok</label>
+        <div class="connect-status">
+          <span class="status-dot off" id="statusDot"></span>
+          <span id="statusText">Aguardando conexão</span>
+        </div>
+        <input id="tiktokUser" type="text" placeholder="@usuario_da_live" />
+        <button class="btn btn-primary" id="connectBtn">Conectar na live</button>
+        <button class="btn btn-ghost" id="disconnectBtn">Desconectar</button>
+      </div>
+
+      <div class="admin-box">
+        <label>Simulador de Testes</label>
+        <input id="testUser" type="text" placeholder="Nome do Jogador" value="JogadorTeste" />
+        <button class="btn btn-ghost" id="simChatBtn">💬 Simular Entrar Pipa</button>
+        <button class="btn btn-ghost" id="simGift1Btn">❤️ Presente Cura</button>
+        <button class="btn btn-ghost" id="simGift5Btn">⚔️ Presente Super Linha</button>
+        <button class="btn btn-ghost" id="simGift10Btn">🛡️ Presente Escudo+Vel.</button>
+        <button class="btn btn-ghost" id="simGift99Btn">💥 Presente Explosão</button>
+        <button class="btn btn-ghost" id="simLikeBtn">👍 Simular Curtida (Direciona pipa)</button>
+        <button class="btn btn-ghost" id="simFollowBtn">⭐ Simular Novo Seguidor</button>
+      </div>
+
+      <div class="admin-box">
+        <label>Controle de Arena</label>
+        <button class="btn btn-danger" id="clearBtn">🧹 Limpar Pipas</button>
+      </div>
+    </div>
+
+    <!-- ==================== ABA: CONFIGURAÇÕES ==================== -->
+    <div class="tab-panel" id="panelConfig">
+
+      <div class="admin-box">
+        <label>🔊 Áudio</label>
+        <div class="cfg-row"><span>Volume dos efeitos</span><span class="val" id="valVolFx">70%</span></div>
+        <input type="range" id="cfgVolFx" min="0" max="100" value="70">
+        <div class="cfg-row"><span>Som ambiente de vento</span></div>
+        <button class="btn btn-ghost" id="cfgAmbientToggle">🔇 Ligar som ambiente</button>
+      </div>
+
+      <div class="admin-box">
+        <label>🪁 Jogabilidade</label>
+        <div class="cfg-row"><span>Velocidade das pipas</span><span class="val" id="valSpeed">1.0x</span></div>
+        <input type="range" id="cfgSpeed" min="50" max="250" value="100">
+        <div class="cfg-row"><span>Disputa entre pipas (perseguição)</span><span class="val" id="valChase">50%</span></div>
+        <input type="range" id="cfgChase" min="0" max="100" value="50">
+        <div class="cfg-note">Controla o quanto as pipas vão atrás umas das outras pra se enroscar. Em 0% elas só flutuam livres (cortes raros); mais alto = mais disputa e cortes mais frequentes, sem ficar caótico.</div>
+        <div class="cfg-row"><span>Máx. de pipas na tela</span><span class="val" id="valMaxKites">20</span></div>
+        <input type="range" id="cfgMaxKites" min="8" max="40" value="20">
+      </div>
+
+      <div class="admin-box">
+        <label>🎁 Limiares dos presentes (em diamantes)</label>
+        <div class="cfg-tier">
+          <span class="tier-icon">❤️</span>
+          <div style="flex:1">
+            <div class="tier-label">Cura total da pipa</div>
+            <div class="tier-hint">a partir de:</div>
+          </div>
+          <input type="number" id="cfgTierCura" min="1" value="1">
+        </div>
+        <div class="cfg-tier">
+          <span class="tier-icon">⚔️</span>
+          <div style="flex:1">
+            <div class="tier-label">Super Linha (3x dano, 15s)</div>
+            <div class="tier-hint">a partir de:</div>
+          </div>
+          <input type="number" id="cfgTierLinha" min="1" value="5">
+        </div>
+        <div class="cfg-tier">
+          <span class="tier-icon">🛡️</span>
+          <div style="flex:1">
+            <div class="tier-label">Escudo + Velocidade (10s)</div>
+            <div class="tier-hint">a partir de:</div>
+          </div>
+          <input type="number" id="cfgTierEscudo" min="1" value="10">
+        </div>
+        <div class="cfg-tier">
+          <span class="tier-icon">💥</span>
+          <div style="flex:1">
+            <div class="tier-label">Explosão (derruba geral)</div>
+            <div class="tier-hint">a partir de:</div>
+          </div>
+          <input type="number" id="cfgTierExplosao" min="1" value="99">
+        </div>
+        <div class="cfg-note">Presentes com valor entre um limiar e outro ativam sempre o efeito do limiar mais alto que atingirem.</div>
+      </div>
+
+      <div class="admin-box">
+        <label>🎁 Catálogo de presentes (detectado ao vivo)</label>
+        <div class="cfg-note">Nada aqui é fixo: essa lista se preenche sozinha com o <b>nome real</b> de cada presente conforme ele chega na sua live, e continua se atualizando a qualquer momento. Se o seu backend souber buscar o catálogo oficial da TikTok, clique em "Sincronizar" — ele também resincroniza automaticamente sempre que a TikTok atualizar os presentes. Em cada linha você escolhe o que aquele presente específico vai ativar no jogo.</div>
+        <button class="btn btn-ghost" id="cfgSyncBtn">🔄 Sincronizar catálogo com o backend</button>
+        <div class="gift-catalog" id="giftCatalog"></div>
+        <button class="btn btn-ghost" id="cfgClearGiftsBtn">🗑️ Limpar presentes detectados</button>
+      </div>
+
+      <div class="admin-box">
+        <button class="btn btn-primary" id="cfgSaveBtn">💾 Salvar configurações</button>
+        <button class="btn btn-ghost" id="cfgResetBtn">↩️ Restaurar padrão</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTAINER CENTRAL 9:16 (Selecione apenas este quadro no OBS Studio) -->
+  <div id="game-wrapper">
+    <div id="game-container">
+      <canvas id="sky"></canvas>
+      <div class="screen-flash" id="screenFlash"></div>
+
+      <div class="hud-overlay">
+        <div class="combo-wrap"><div class="combo-txt" id="comboTxt"></div></div>
+
+        <div class="leaderboard">
+          <h3>🏆 Ranking de Cortes</h3>
+          <div id="lbList"><div class="lb-empty">Ainda ninguém cortou...</div></div>
+        </div>
+
+        <div class="toasts" id="toasts"></div>
+      </div>
+    </div>
+  </div>
+
+  </div> <!-- fim #appRoot -->
+
+<script>
+// ============================================================
+// BATALHA DE PIPA — MOTOR DO JOGO (ADAPTADO PARA 9:16)
+// ============================================================
+const canvas = document.getElementById('sky');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  W = canvas.width = rect.width;
+  H = canvas.height = rect.height;
+}
+resize();
+window.addEventListener('resize', resize);
+setTimeout(resize, 100);
+
+const KITE_COLORS = ['#e63946','#ffd166','#06d6a0','#8338ec','#f72585','#4cc9f0','#fb8500'];
+
+// ============================================================
+// CONFIGURAÇÕES (persistidas no navegador)
+// ============================================================
+const DEFAULT_SETTINGS = {
+  volumeFx: 0.7,
+  ambientWind: false,
+  kiteSpeed: 1.0,
+  maxKites: 20,
+  chaseAggro: 0.5,
+  tierCura: 1,
+  tierLinha: 5,
+  tierEscudo: 10,
+  tierExplosao: 99,
+  giftOverrides: {},   // { "nome_do_presente_normalizado": "cura"|"linha"|"escudo"|"explosao" }
+};
+let settings = { ...DEFAULT_SETTINGS, giftOverrides: {} };
+try {
+  const saved = JSON.parse(localStorage.getItem('pipaSettings') || 'null');
+  if (saved) settings = { ...DEFAULT_SETTINGS, ...saved, giftOverrides: { ...saved.giftOverrides } };
+} catch(e) {}
+
+function saveSettings() {
+  try { localStorage.setItem('pipaSettings', JSON.stringify(settings)); } catch(e) {}
+}
+
+// ============================================================
+// CATÁLOGO DE PRESENTES — 100% DINÂMICO, SEM NADA PRÉ-FIXADO
+// Nenhum presente vem "de fábrica" aqui. A lista abaixo (discoveredGifts)
+// só é preenchida de duas formas:
+//   1) Automaticamente, com o NOME REAL de cada presente que chega pela
+//      sua live (o backend do TikTok manda o nome junto do evento 'gift');
+//   2) Se o seu backend expuser o catálogo oficial da conta (evento
+//      'giftCatalog'), a lista é sincronizada de uma vez, e volta a
+//      sincronizar sempre que o backend mandar de novo — inclusive se a
+//      TikTok atualizar/mudar o catálogo.
+// Assim a lista nunca fica "hardcoded": ela reflete os presentes reais
+// da sua conta/live.
+// ============================================================
+let discoveredGifts = new Map(); // key normalizado -> {name, diamonds, source, lastSeen}
+try {
+  const savedGifts = JSON.parse(localStorage.getItem('pipaGifts') || 'null');
+  if (savedGifts) discoveredGifts = new Map(savedGifts);
+} catch(e) {}
+
+function normalizeGiftKey(name) {
+  return String(name||'presente').trim().toLowerCase();
+}
+
+function registerGift(name, diamonds, source) {
+  if (!name) return;
+  const key = normalizeGiftKey(name);
+  const prev = discoveredGifts.get(key);
+  discoveredGifts.set(key, {
+    name,
+    diamonds: (diamonds!=null) ? diamonds : (prev ? prev.diamonds : null),
+    source: source || (prev ? prev.source : 'live'),
+    lastSeen: Date.now(),
+  });
+  try { localStorage.setItem('pipaGifts', JSON.stringify([...discoveredGifts.entries()])); } catch(e) {}
+  renderGiftCatalog();
+}
+
+// Se o backend mandar o catálogo oficial da conta, ele entra aqui e some
+// a sincronização é refeita toda vez que esse evento chegar de novo.
+function syncOfficialCatalog(list) {
+  if (!Array.isArray(list)) return;
+  for (const g of list) {
+    const name = g.name || g.giftName || g.gift_name;
+    const diamonds = g.diamonds ?? g.diamondCount ?? g.coin ?? g.combo_price ?? null;
+    if (name) registerGift(name, diamonds, 'catalogo_oficial');
+  }
+  toast(`📡 Catálogo de presentes sincronizado (${list.length} itens).`);
+}
+
+function tierForDiamonds(count) {
+  const c = count == null ? 1 : count;
+  if (c >= settings.tierExplosao) return { key:'explosao', label:'💥 Explosão', cls:'tier-explosao' };
+  if (c >= settings.tierEscudo) return { key:'escudo', label:'🛡️ Escudo+Vel.', cls:'tier-escudo' };
+  if (c >= settings.tierLinha) return { key:'linha', label:'⚔️ Super Linha', cls:'tier-linha' };
+  return { key:'cura', label:'❤️ Cura', cls:'tier-cura' };
+}
+
+const TIER_OPTIONS = [
+  { key:'', label:'Automático (por diamantes)' },
+  { key:'cura', label:'❤️ Cura' },
+  { key:'linha', label:'⚔️ Super Linha' },
+  { key:'escudo', label:'🛡️ Escudo+Vel.' },
+  { key:'explosao', label:'💥 Explosão' },
+];
+
+function renderGiftCatalog() {
+  const el = document.getElementById('giftCatalog');
+  if (!el) return;
+  const items = [...discoveredGifts.entries()].sort((a,b) => (a[1].diamonds||0)-(b[1].diamonds||0));
+  if (items.length === 0) {
+    el.innerHTML = '<div class="cfg-note">Nenhum presente detectado ainda. A lista se preenche sozinha assim que um presente real chegar na sua live (ou use o simulador na aba Controle para testar).</div>';
+    return;
+  }
+  el.innerHTML = items.map(([key, g]) => {
+    const override = settings.giftOverrides[key] || '';
+    const effective = override ? TIER_OPTIONS.find(o=>o.key===override) : tierForDiamonds(g.diamonds);
+    const cls = override ? ('tier-'+override) : tierForDiamonds(g.diamonds).cls;
+    const label = override ? effective.label : effective.label;
+    const diamondsTxt = g.diamonds!=null ? `${g.diamonds}💎` : '—';
+    const badge = g.source === 'catalogo_oficial' ? '📡' : '👁️';
+    const opts = TIER_OPTIONS.map(o => `<option value="${o.key}" ${o.key===override?'selected':''}>${o.label}</option>`).join('');
+    return `<div class="gift-row">
+      <span class="gift-emoji" title="${g.source==='catalogo_oficial' ? 'Veio do catálogo oficial' : 'Detectado ao vivo'}">${badge}</span>
+      <span class="gift-name">${escapeHtml(g.name)}</span>
+      <span class="gift-diamonds">${diamondsTxt}</span>
+      <select class="gift-tier-select ${cls}" data-key="${key}" onchange="setGiftOverride('${key}', this.value)">${opts}</select>
+    </div>`;
+  }).join('');
+}
+
+function setGiftOverride(key, tierKey) {
+  if (tierKey) settings.giftOverrides[key] = tierKey;
+  else delete settings.giftOverrides[key];
+  saveSettings();
+  renderGiftCatalog();
+}
+
+let kites = new Map();
+let cutsBoard = new Map();
+let clouds = [];
+for(let i=0; i<5; i++){
+  clouds.push({x: Math.random()*400, y: 30+Math.random()*120, s: .4+Math.random()*.6, v: 5+Math.random()*8});
+}
+// Segunda camada de nuvens, mais distante e lenta, pra dar profundidade (parallax)
+let cloudsFar = [];
+for(let i=0; i<4; i++){
+  cloudsFar.push({x: Math.random()*400, y: 10+Math.random()*90, s: .25+Math.random()*.3, v: 2+Math.random()*3});
+}
+let screenShake = 0;
+
+// Banner grande exibido na explosao (presente 99+ coins)
+let explosionBanner = null; // { name, start }
+const EXPLOSION_BANNER_DURATION = 4000;
+
+function colorFor(id) {
+  let h=0; for(const c of String(id)) h = (h*31 + c.charCodeAt(0))>>>0;
+  return KITE_COLORS[h % KITE_COLORS.length];
+}
+
+function spawnKite(userId, name) {
+  if(kites.has(userId)){
+    const k = kites.get(userId);
+    k.bump = 1;
+    return k;
+  }
+  const k = {
+    id: userId, name,
+    x: 30 + Math.random()*(W-60),
+    y: H + 30,
+    vx: (Math.random()-.5)*55,
+    vy: -40 - Math.random()*20,
+    targetY: H*0.12 + Math.random()*(H*0.64),
+    size: 22 + Math.random()*6,
+    color: colorFor(userId),
+    power: null,            // usado apenas pelo efeito 'golden' de follow
+    powerUntil: 0,
+    shieldUntil: 0,          // presente de 10 coins: reduz dano recebido pela metade
+    speedUntil: 0,           // presente de 10 coins: aumenta velocidade de voo
+    superLineUntil: 0,       // presente de 5 coins: 3x dano ao cortar
+    likeDir: 1,              // alterna a cada curtida: 1 = direita, -1 = esquerda
+    likeSteerUntil: 0,       // enquanto now < isso, a pipa é guiada pela curtida
+    cuts: 0,
+    tail: Math.random()*10,
+    bump: 0,
+    born: performance.now(),
+    hp: 0, maxHp: 0,
+    anchorX: 0,
+    flightPhase: Math.random()*Math.PI*2,
+    flightSpeed: 0.7 + Math.random()*0.5,
+    flightAmp: 45 + Math.random()*30,
+    chaseTargetId: null,
+    retargetAt: performance.now() + 400 + Math.random()*1200,
+  };
+  k.maxHp = 100 + Math.floor(Math.random()*11);
+  k.hp = k.maxHp;
+  k.anchorX = Math.max(14, Math.min(W-14, k.x + (Math.random()-.5)*220));
+  kites.set(userId, k);
+  playSpawnSound();
+
+  if(kites.size > settings.maxKites){
+    const now = performance.now();
+    let oldest=null;
+    for(const kk of kites.values()){
+      const hasActiveEffect =
+        kk.power ||
+        now < kk.shieldUntil ||
+        now < kk.speedUntil ||
+        now < kk.superLineUntil;
+      if(!hasActiveEffect && (!oldest || kk.born < oldest.born)) oldest = kk;
+    }
+    if(oldest) removeKite(oldest.id, false);
+  }
+  return k;
+}
+
+function removeKite(userId, cut) {
+  const k = kites.get(userId);
+  if(!k) return;
+  if(cut) spawnDebris(k);
+  kites.delete(userId);
+}
+
+function spawnDebris(k) {
+  particles.push({type:'debris', x:k.x, y:k.y, color:k.color, vx:(Math.random()-.5)*50, vy:30, life:1.2, t:0});
+}
+
+let particles = [];
+
+// ============================================================
+// SISTEMA DE PODERES POR VALOR DO PRESENTE
+//   >= 99 coins -> Explosao: todas as outras pipas morrem
+//   >= 10 coins -> Escudo (metade do dano) + Velocidade por 10s
+//   >= 5  coins -> Super Linha: 3x de dano por 15s
+//   >= 1  coin  -> Cura total da vida da pipa
+// ============================================================
+function applyGift(userId, name, diamondCount, giftName) {
+  const k = spawnKite(userId, name);
+  const now = performance.now();
+  bumpCombo();
+
+  // Registra o presente real no catálogo dinâmico (nunca pré-fixado)
+  if (giftName) registerGift(giftName, diamondCount, 'live');
+
+  // Se esse presente específico tiver uma regra manual definida na aba
+  // Configurações, ela sempre manda mais que o limiar por diamantes.
+  const override = giftName ? settings.giftOverrides[normalizeGiftKey(giftName)] : null;
+  const tierKey = override || tierForDiamonds(diamondCount).key;
+
+  if (tierKey === 'explosao') {
+    triggerExplosion(k, name);
+    return;
+  }
+
+  if (tierKey === 'escudo') {
+    k.shieldUntil = now + 10000;
+    k.speedUntil = now + 10000;
+    k.bump = 1;
+    particles.push({type:'burst', x:k.x, y:k.y, color:'#4cc9f0', life:.6, t:0});
+    playShieldSound();
+    toast(`🛡️ <b>${escapeHtml(name)}</b> ativou Escudo + Velocidade!`);
+    return;
+  }
+
+  if (tierKey === 'linha') {
+    k.superLineUntil = now + 15000;
+    k.bump = 1;
+    particles.push({type:'burst', x:k.x, y:k.y, color:'#ff2d55', life:.6, t:0});
+    playSuperLineSound();
+    toast(`⚔️ <b>${escapeHtml(name)}</b> ativou Super Linha (3x dano)!`);
+    return;
+  }
+
+  // Cura total
+  k.hp = k.maxHp;
+  k.bump = 1;
+  particles.push({type:'burst', x:k.x, y:k.y, color:'#06d6a0', life:.6, t:0});
+  playHealSound();
+  toast(`❤️ <b>${escapeHtml(name)}</b> encheu a vida da pipa!`);
+}
+
+function triggerExplosion(winnerKite, winnerName) {
+  const now = performance.now();
+
+  for (const k of [...kites.values()]) {
+    if (k.id !== winnerKite.id) {
+      spawnDebris(k);
+      spawnConfetti(k.x, k.y);
+      kites.delete(k.id);
+    }
+  }
+
+  winnerKite.hp = winnerKite.maxHp;
+  winnerKite.shieldUntil = now + 4000;
+
+  particles.push({type:'burst', x: W/2, y: H/2, color:'#ffd166', life:1, t:0});
+  spawnConfetti(W/2, H/2, 26);
+  explosionBanner = { name: winnerName, start: now };
+  screenShake = 18;
+  flashScreen(0.85);
+  playExplosionSound();
+
+  toast(`💥 <b>${escapeHtml(winnerName)}</b> mandou um presente especial e explodiu todas as pipas!`);
+}
+
+function applyFollow(userId, name) {
+  const k = spawnKite(userId, name);
+  k.power = 'golden';
+  k.powerUntil = performance.now() + 7000;
+  k.color = '#ffd166';
+  k.bump = 1;
+  k.targetY = H*0.10; // a pipa sobe, brilhando, enquanto o efeito dura
+  particles.push({type:'burst', x:k.x, y:k.y, color:'#ffd166', life:1.2, t:0});
+  spawnFireworks(3);
+  playFollowSound();
+  playFireworkSound();
+  toast(`⭐ <b>${escapeHtml(name)}</b> começou a seguir!`);
+}
+
+// Fogos de artifício no fundo do céu (reaproveita as partículas já existentes)
+function spawnFireworks(count=3) {
+  for(let i=0;i<count;i++){
+    setTimeout(() => {
+      const x = 40 + Math.random()*(W-80);
+      const y = H*0.14 + Math.random()*(H*0.3);
+      const color = KITE_COLORS[Math.floor(Math.random()*KITE_COLORS.length)];
+      particles.push({type:'burst', x, y, color, life:1, t:0});
+      for(let j=0;j<12;j++){
+        const ang = Math.random()*Math.PI*2;
+        const spd = 60 + Math.random()*60;
+        particles.push({type:'debris', x, y, color, vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd-20, life:.8+Math.random()*.5, t:0});
+      }
+    }, i*260);
+  }
+}
+
+// Curtida controla a pipa de quem curtiu: alterna direita/esquerda enquanto
+// a pessoa continuar curtindo. Se ela parar, a pipa volta ao voo normal.
+function applyLike(userId, name, count) {
+  const k = spawnKite(userId, name || userId);
+  const now = performance.now();
+  k.likeDir = (k.likeDir === 1) ? -1 : 1;
+  k.likeSteerUntil = now + 1300;
+  k.bump = Math.min(1, k.bump + 0.3);
+  playLikeSteerSound();
+}
+
+// ---- SISTEMA DE COMBO (mantém a live animada quando os cortes se acumulam) ----
+let comboCount = 0;
+let comboTimeout = null;
+function bumpCombo() {
+  comboCount++;
+  const el = document.getElementById('comboTxt');
+  if (!el) return;
+  el.textContent = comboCount > 1 ? `🔥 COMBO x${comboCount}!` : '';
+  el.classList.toggle('show', comboCount > 1);
+  clearTimeout(comboTimeout);
+  comboTimeout = setTimeout(() => { comboCount = 0; el.classList.remove('show'); }, 3500);
+}
+
+function flashScreen(intensity) {
+  const el = document.getElementById('screenFlash');
+  if (!el) return;
+  el.style.transition = 'none';
+  el.style.opacity = String(intensity);
+  requestAnimationFrame(() => {
+    el.style.transition = 'opacity .5s ease';
+    el.style.opacity = '0';
+  });
+}
+
+function segIntersect(p1,p2,p3,p4) {
+  const d1x=p2.x-p1.x, d1y=p2.y-p1.y;
+  const d2x=p4.x-p3.x, d2y=p4.y-p3.y;
+  const denom = d1x*d2y - d1y*d2x;
+  if(Math.abs(denom) < 1e-6) return null;
+  const t = ((p3.x-p1.x)*d2y - (p3.y-p1.y)*d2x) / denom;
+  const u = ((p3.x-p1.x)*d1y - (p3.y-p1.y)*d1x) / denom;
+  if(t<0 || t>1 || u<0 || u>1) return null;
+  return { x: p1.x + t*d1x, y: p1.y + t*d1y };
+}
+
+const lastClash = new Map();
+
+// ============================================================
+// SOM DE CORTE (sintetizado, sem precisar de arquivo de audio)
+// ============================================================
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    audioCtx = new Ctx();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(()=>{});
+  }
+  return audioCtx;
+}
+// Alguns navegadores só liberam áudio após uma interação do usuário
+document.addEventListener('click', () => { getAudioCtx(); }, { once: true });
+
+function vol(base) { return base * settings.volumeFx; }
+
+function playCutSound() {
+  const ctxA = getAudioCtx();
+  if (!ctxA) return;
+  try {
+    const now = ctxA.currentTime;
+
+    const osc = ctxA.createOscillator();
+    const gain = ctxA.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(1100, now);
+    osc.frequency.exponentialRampToValueAtTime(90, now + 0.16);
+    gain.gain.setValueAtTime(vol(0.28), now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+    osc.connect(gain).connect(ctxA.destination);
+    osc.start(now);
+    osc.stop(now + 0.22);
+
+    // um "click" agudo por cima, pra dar sensacao de lamina/corte
+    const click = ctxA.createOscillator();
+    const clickGain = ctxA.createGain();
+    click.type = 'square';
+    click.frequency.setValueAtTime(2200, now);
+    clickGain.gain.setValueAtTime(vol(0.12), now);
+    clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    click.connect(clickGain).connect(ctxA.destination);
+    click.start(now);
+    click.stop(now + 0.06);
+  } catch (e) {
+    // ambiente sem suporte a audio, ignora
+  }
+}
+
+function playSpawnSound() {
+  const ctxA = getAudioCtx();
+  if (!ctxA) return;
+  try {
+    const now = ctxA.currentTime;
+    const osc = ctxA.createOscillator();
+    const gain = ctxA.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(420, now);
+    osc.frequency.exponentialRampToValueAtTime(760, now + 0.12);
+    gain.gain.setValueAtTime(vol(0.10), now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    osc.connect(gain).connect(ctxA.destination);
+    osc.start(now); osc.stop(now + 0.2);
+  } catch(e) {}
+}
+
+function playHealSound() {
+  const ctxA = getAudioCtx();
+  if (!ctxA) return;
+  try {
+    const now = ctxA.currentTime;
+    [660, 880, 1100].forEach((f, i) => {
+      const osc = ctxA.createOscillator();
+      const gain = ctxA.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f, now + i*0.07);
+      gain.gain.setValueAtTime(vol(0.18), now + i*0.07);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i*0.07 + 0.28);
+      osc.connect(gain).connect(ctxA.destination);
+      osc.start(now + i*0.07); osc.stop(now + i*0.07 + 0.3);
+    });
+  } catch(e) {}
+}
+
+function playSuperLineSound() {
+  const ctxA = getAudioCtx();
+  if (!ctxA) return;
+  try {
+    const now = ctxA.currentTime;
+    const osc = ctxA.createOscillator();
+    const gain = ctxA.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(180, now);
+    osc.frequency.exponentialRampToValueAtTime(900, now + 0.3);
+    gain.gain.setValueAtTime(vol(0.22), now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    osc.connect(gain).connect(ctxA.destination);
+    osc.start(now); osc.stop(now + 0.36);
+  } catch(e) {}
+}
+
+function playShieldSound() {
+  const ctxA = getAudioCtx();
+  if (!ctxA) return;
+  try {
+    const now = ctxA.currentTime;
+    const osc = ctxA.createOscillator();
+    const gain = ctxA.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(300, now);
+    osc.frequency.linearRampToValueAtTime(520, now + 0.4);
+    gain.gain.setValueAtTime(vol(0.20), now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    osc.connect(gain).connect(ctxA.destination);
+    osc.start(now); osc.stop(now + 0.5);
+  } catch(e) {}
+}
+
+function playFollowSound() {
+  const ctxA = getAudioCtx();
+  if (!ctxA) return;
+  try {
+    const now = ctxA.currentTime;
+    [880, 1180, 1480].forEach((f, i) => {
+      const osc = ctxA.createOscillator();
+      const gain = ctxA.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, now + i*0.06);
+      gain.gain.setValueAtTime(vol(0.14), now + i*0.06);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i*0.06 + 0.2);
+      osc.connect(gain).connect(ctxA.destination);
+      osc.start(now + i*0.06); osc.stop(now + i*0.06 + 0.22);
+    });
+  } catch(e) {}
+}
+
+function noiseBuffer(ctxA, duration) {
+  const buf = ctxA.createBuffer(1, ctxA.sampleRate * duration, ctxA.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random()*2 - 1;
+  return buf;
+}
+
+// Som curto de "whoosh" tocado quando uma curtida direciona a pipa
+function playLikeSteerSound() {
+  const ctxA = getAudioCtx();
+  if (!ctxA) return;
+  try {
+    const now = ctxA.currentTime;
+    const src = ctxA.createBufferSource();
+    src.buffer = noiseBuffer(ctxA, 0.22);
+    const filter = ctxA.createBiquadFilter();
+    filter.type = 'bandpass'; filter.frequency.setValueAtTime(900, now);
+    filter.frequency.exponentialRampToValueAtTime(300, now + 0.2);
+    const gain = ctxA.createGain();
+    gain.gain.setValueAtTime(vol(0.14), now);
+    gain.gain.linearRampToValueAtTime(0.001, now + 0.22);
+    src.connect(filter).connect(gain).connect(ctxA.destination);
+    src.start(now); src.stop(now + 0.22);
+  } catch(e) {}
+}
+
+// Estalos de fogos de artifício (crepitação), tocados quando alguém segue
+function playFireworkSound() {
+  const ctxA = getAudioCtx();
+  if (!ctxA) return;
+  try {
+    const now = ctxA.currentTime;
+    for (let i=0; i<3; i++){
+      const t = now + i*0.26;
+      const src = ctxA.createBufferSource();
+      src.buffer = noiseBuffer(ctxA, 0.3);
+      const filter = ctxA.createBiquadFilter();
+      filter.type = 'highpass'; filter.frequency.value = 1200;
+      const gain = ctxA.createGain();
+      gain.gain.setValueAtTime(vol(0.18), t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+      src.connect(filter).connect(gain).connect(ctxA.destination);
+      src.start(t); src.stop(t + 0.3);
+    }
+  } catch(e) {}
+}
+
+function playExplosionSound() {
+  const ctxA = getAudioCtx();
+  if (!ctxA) return;
+  try {
+    const now = ctxA.currentTime;
+    // Estrondo grave
+    const osc = ctxA.createOscillator();
+    const gain = ctxA.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(160, now);
+    osc.frequency.exponentialRampToValueAtTime(35, now + 0.6);
+    gain.gain.setValueAtTime(vol(0.5), now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+    osc.connect(gain).connect(ctxA.destination);
+    osc.start(now); osc.stop(now + 0.7);
+
+    // Ruído de impacto
+    const src = ctxA.createBufferSource();
+    src.buffer = noiseBuffer(ctxA, 0.5);
+    const filter = ctxA.createBiquadFilter();
+    filter.type = 'lowpass'; filter.frequency.setValueAtTime(2200, now);
+    filter.frequency.exponentialRampToValueAtTime(120, now + 0.5);
+    const ngain = ctxA.createGain();
+    ngain.gain.setValueAtTime(vol(0.4), now);
+    ngain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    src.connect(filter).connect(ngain).connect(ctxA.destination);
+    src.start(now); src.stop(now + 0.5);
+  } catch(e) {}
+}
+
+// ---- SOM AMBIENTE DE VENTO (loop opcional, ligado pelas Configurações) ----
+let ambientNodes = null;
+function startAmbientWind() {
+  const ctxA = getAudioCtx();
+  if (!ctxA || ambientNodes) return;
+  try {
+    const src = ctxA.createBufferSource();
+    src.buffer = noiseBuffer(ctxA, 4);
+    src.loop = true;
+    const filter = ctxA.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 500;
+    const gain = ctxA.createGain();
+    gain.gain.value = vol(0.05);
+    src.connect(filter).connect(gain).connect(ctxA.destination);
+    src.start();
+    ambientNodes = { src, gain, filter };
+  } catch(e) {}
+}
+function stopAmbientWind() {
+  if (!ambientNodes) return;
+  try { ambientNodes.src.stop(); } catch(e) {}
+  ambientNodes = null;
+}
+function updateAmbientVolume() {
+  if (ambientNodes) ambientNodes.gain.gain.value = vol(0.05);
+}
+
+function dealDamage(a, b, atPoint, forced) {
+  if(!kites.has(a.id) || !kites.has(b.id)) return;
+  const now = performance.now();
+
+  const dmgFrom = (attacker, defender) => {
+    let dmg = 9 + Math.random()*9;
+    if(now < attacker.superLineUntil) dmg *= 3;       // Super Linha (presente 5 coins)
+    if(now < defender.shieldUntil) dmg *= 0.5;         // Escudo (presente 10 coins)
+    if(defender.power === 'golden') dmg *= 0.55;       // seguidor dourado
+    return Math.round(dmg);
+  };
+
+  const dmgToB = dmgFrom(a, b);
+  const dmgToA = forced ? 0 : dmgFrom(b, a);
+
+  b.hp -= dmgToB;
+  if(!forced) a.hp -= dmgToA;
+
+  particles.push({type:'spark', x: atPoint.x, y: atPoint.y, life:.35, t:0});
+
+  const bDied = b.hp <= 0;
+  const aDied = !forced && a.hp <= 0;
+
+  if(bDied) killKite(b, a);
+  if(aDied) killKite(a, b);
+}
+
+function killKite(loser, winner) {
+  if(!kites.has(loser.id)) return;
+  spawnConfetti(loser.x, loser.y);
+  if(winner){
+    winner.cuts = (winner.cuts||0) + 1;
+    cutsBoard.set(winner.name, (cutsBoard.get(winner.name)||0) + 1);
+    updateLeaderboard();
+    playCutSound();
+    bumpCombo();
+    screenShake = Math.max(screenShake, 3);
+    toast(`✂️ <b>${escapeHtml(winner.name)}</b> cortou <b>${escapeHtml(loser.name)}</b>!`);
+  } else {
+    toast(`✂️ A linha de <b>${escapeHtml(loser.name)}</b> arrebentou!`);
+  }
+  removeKite(loser.id, true);
+}
+
+function spawnConfetti(x, y, count=10) {
+  for(let i=0;i<count;i++){
+    particles.push({
+      type:'debris', x, y,
+      color: KITE_COLORS[Math.floor(Math.random()*KITE_COLORS.length)],
+      vx:(Math.random()-.5)*140, vy:-40-Math.random()*60,
+      life:.9+Math.random()*.5, t:0
+    });
+  }
+}
+
+function checkLineCollisions(now) {
+  const arr = [...kites.values()];
+  for(let i=0;i<arr.length;i++){
+    const a = arr[i];
+    if(!kites.has(a.id)) continue;
+    const pa1 = {x:a.x, y:a.y}, pa2 = {x:a.anchorX, y:H+30};
+    for(let j=i+1;j<arr.length;j++){
+      const b = arr[j];
+      if(!kites.has(b.id)) continue;
+      const pb1 = {x:b.x, y:b.y}, pb2 = {x:b.anchorX, y:H+30};
+
+      const hit = segIntersect(pa1, pa2, pb1, pb2);
+      if(!hit) continue;
+
+      const key = a.id < b.id ? a.id+'|'+b.id : b.id+'|'+a.id;
+      const last = lastClash.get(key) || 0;
+      if(now - last < 550) continue;
+      lastClash.set(key, now);
+
+      dealDamage(a, b, hit, false);
+    }
+  }
+}
+
+function updateLeaderboard() {
+  const list = [...cutsBoard.entries()].sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const el = document.getElementById('lbList');
+  if(list.length===0){ el.innerHTML = '<div class="lb-empty">Ainda ninguém cortou...</div>'; return; }
+  el.innerHTML = list.map(([name,cuts],i)=>`
+    <div class="lb-row">
+      <span class="lb-rank">${i+1}º</span>
+      <span class="lb-dot" style="background:${colorFor(name)}"></span>
+      <span class="lb-name">${escapeHtml(name)}</span>
+      <span class="lb-cuts">${cuts}✂️</span>
+    </div>`).join('');
+}
+
+function toast(html) {
+  const wrap = document.getElementById('toasts');
+  const el = document.createElement('div');
+  el.className='toast'; el.innerHTML = html;
+  wrap.appendChild(el);
+  setTimeout(()=>el.remove(), 3800);
+  while(wrap.children.length>4) wrap.removeChild(wrap.firstChild);
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now-last)/1000); last = now;
+  update(dt, now);
+  draw(now);
+  requestAnimationFrame(loop);
+}
+
+function update(dt, now) {
+  const globalSpeed = settings.kiteSpeed;
+  const chaseWeight = settings.chaseAggro;
+
+  for(const k of kites.values()){
+    if(k.y > k.targetY){ k.vy = -85*globalSpeed; } else { k.vy += (Math.sin(now/700 + k.tail)*11 - k.vy*0.6)*dt*4; }
+
+    if(now < k.likeSteerUntil){
+      // Enquanto a pessoa estiver curtindo, a pipa dela é guiada pro lado
+      // (direita, esquerda, direita...) em vez do voo/persguição normal.
+      const steerVx = k.likeDir * 140 * globalSpeed;
+      k.vx += (steerVx - k.vx) * dt * 3.2;
+    } else {
+      // De tempos em tempos, cada pipa escolhe outra pra "perseguir" — é
+      // isso que faz os cortes acontecerem com frequência.
+      if(now > k.retargetAt){
+        k.retargetAt = now + 1600 + Math.random()*2200;
+        const others = [...kites.values()].filter(o => o.id !== k.id);
+        k.chaseTargetId = others.length ? others[Math.floor(Math.random()*others.length)].id : null;
+      }
+      const target = k.chaseTargetId ? kites.get(k.chaseTargetId) : null;
+
+      // Voo lateral suave tipo zigue-zague (movimento base), misturado com
+      // uma leve atração em direção ao alvo perseguido — moderada, não corrida.
+      const speedBoost = now < k.speedUntil ? 1.4 : 1;
+      const wanderVx = Math.sin(now/1000 * k.flightSpeed + k.flightPhase) * k.flightAmp * speedBoost;
+      let chaseVx = 0;
+      if(target && chaseWeight > 0){
+        const dx = target.x - k.x;
+        chaseVx = Math.max(-70, Math.min(70, dx*0.9)) * chaseWeight;
+        // Arrasta lentamente o ponto de ancoragem (onde a linha fica presa)
+        // na direção do alvo, pra as linhas se cruzarem com mais frequência.
+        const targetAnchor = Math.max(14, Math.min(W-14, target.anchorX));
+        k.anchorX += (targetAnchor - k.anchorX) * dt * 0.25 * chaseWeight;
+      }
+      const targetVx = wanderVx*(1 - chaseWeight*0.45) + chaseVx;
+      k.vx += (targetVx - k.vx) * dt * 1.8;
+    }
+
+    const speedMul = (now < k.speedUntil ? 1.6 : 1) * globalSpeed;
+    k.x += (k.vx*speedMul) * dt;
+    k.y += k.vy * dt * globalSpeed;
+
+    if(k.x < 14){ k.x=14; }
+    if(k.x > W-14){ k.x=W-14; }
+
+    if(k.power && now > k.powerUntil){
+      k.power=null;
+      k.targetY = H*0.12 + Math.random()*(H*0.64); // volta a voar numa altura normal
+    }
+    if(k.bump>0) k.bump -= dt*2;
+
+    // Trilha de brilho para pipas em modo dourado (seguidor) ou Super Linha
+    if(k.power==='golden' && Math.random() < 0.5){
+      particles.push({type:'spark', x:k.x+(Math.random()-.5)*10, y:k.y+(Math.random()-.5)*10, life:.35, t:0});
+    }
+  }
+
+  for(const c of clouds){ c.x += c.v*dt; if(c.x>W+100) c.x=-100; }
+  for(const c of cloudsFar){ c.x += c.v*dt; if(c.x>W+100) c.x=-100; }
+  particles = particles.filter(p=>{ p.t += dt; return p.t < p.life; });
+  checkLineCollisions(now);
+  if(screenShake > 0) screenShake *= (1 - dt*8);
+  if(screenShake < 0.1) screenShake = 0;
+}
+
+function lighten(hex, percent) {
+  const num = parseInt(hex.slice(1), 16);
+  let r = (num >> 16) + Math.round(2.55 * percent);
+  let g = ((num >> 8) & 0xff) + Math.round(2.55 * percent);
+  let b = (num & 0xff) + Math.round(2.55 * percent);
+  r = Math.min(255, Math.max(0, r));
+  g = Math.min(255, Math.max(0, g));
+  b = Math.min(255, Math.max(0, b));
+  return `rgb(${r},${g},${b})`;
+}
+
+function drawKite(k, now) {
+  const wobble = Math.sin(now/260 + k.tail)*3;
+  const x = k.x + wobble, y = k.y;
+  const s = k.size * (1 + k.bump*0.3);
+
+  const superActive = now < k.superLineUntil;
+  ctx.strokeStyle = superActive ? '#ff2d55dd' : '#ffffff55';
+  ctx.lineWidth = superActive ? 3 : 1;
+  ctx.beginPath(); ctx.moveTo(x, y+s*0.6); ctx.lineTo(k.anchorX, H+30); ctx.stroke();
+
+  // ---- CAUDA COM FITAS BALANÇANDO ----
+  const tailSegs = 5;
+  let px = x, py = y + s*0.85;
+  for (let i=0; i<tailSegs; i++) {
+    const sway = Math.sin(now/220 + k.tail + i*0.9) * (5 + i*2.2);
+    const nx = x + sway;
+    const ny = py + s*0.4 + i*(s*0.34);
+    const segColor = i % 2 === 0 ? k.color : '#fff8ecdd';
+
+    ctx.strokeStyle = segColor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.quadraticCurveTo((px+nx)/2 + sway*0.3, (py+ny)/2, nx, ny);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(nx, ny);
+    ctx.rotate(Math.sin(now/220 + k.tail + i)*0.6);
+    ctx.fillStyle = i % 2 === 0 ? '#fff8ecdd' : k.color;
+    ctx.beginPath();
+    ctx.moveTo(-5,0); ctx.lineTo(0,-3.5); ctx.lineTo(5,0); ctx.lineTo(0,3.5); ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    px = nx; py = ny;
+  }
+
+  ctx.save();
+  ctx.translate(x,y);
+  const bank = Math.max(-0.5, Math.min(0.5, -k.vx/110));
+  ctx.rotate(bank + Math.sin(now/500+k.tail)*0.05);
+
+  if(now < k.shieldUntil){
+    ctx.beginPath(); ctx.arc(0,0,s*1.15,0,7);
+    ctx.strokeStyle='#4cc9f0aa'; ctx.lineWidth=3; ctx.stroke();
+  }
+  if(k.power==='golden'){
+    ctx.shadowColor='#ffd166'; ctx.shadowBlur=18;
+  }
+
+  // Corpo com gradiente suave
+  const bodyGrad = ctx.createLinearGradient(0,-s,0,s);
+  bodyGrad.addColorStop(0, lighten(k.color, 30));
+  bodyGrad.addColorStop(1, k.color);
+
+  ctx.beginPath();
+  ctx.moveTo(0,-s); ctx.lineTo(s*0.75,0); ctx.lineTo(0,s); ctx.lineTo(-s*0.75,0); ctx.closePath();
+  ctx.fillStyle = k.power==='golden' ? '#ffd166' : bodyGrad;
+  ctx.fill();
+  ctx.strokeStyle='#00000030'; ctx.lineWidth=1.5; ctx.stroke();
+
+  // Quadrantes decorativos (estilo clássico de pipa)
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = 'rgba(255,255,255,0.20)';
+  ctx.beginPath(); ctx.moveTo(0,-s); ctx.lineTo(s*0.75,0); ctx.lineTo(0,0); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,s); ctx.lineTo(-s*0.75,0); ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // Varetas em cruz
+  ctx.strokeStyle='#00000035'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(0,-s); ctx.lineTo(0,s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-s*0.75,0); ctx.lineTo(s*0.75,0); ctx.stroke();
+
+  // Brilho
+  ctx.beginPath();
+  ctx.ellipse(-s*0.22, -s*0.32, s*0.22, s*0.11, -0.6, 0, Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,0.35)';
+  ctx.fill();
+
+  ctx.restore();
+
+  // Nome
+  ctx.font="600 10px Inter, sans-serif";
+  ctx.textAlign='center';
+  const label = k.name.length>12 ? k.name.slice(0,11)+'…' : k.name;
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle='#00000066';
+  ctx.fillRect(x-tw/2-4, y-s-18, tw+8, 14);
+  ctx.fillStyle='#fff8ec';
+  ctx.fillText(label, x, y-s-7);
+
+  // Barra de Vida
+  const barW = 34, barH = 4;
+  const hpFrac = Math.max(0, k.hp / k.maxHp);
+  ctx.fillStyle='#00000066';
+  ctx.fillRect(x-barW/2, y-s-25, barW, barH);
+  ctx.fillStyle = hpFrac>0.5 ? '#06d6a0' : hpFrac>0.25 ? '#ffd166' : '#e63946';
+  ctx.fillRect(x-barW/2, y-s-25, barW*hpFrac, barH);
+}
+
+function drawExplosionBanner(now) {
+  if (!explosionBanner) return;
+  const elapsed = now - explosionBanner.start;
+  if (elapsed > EXPLOSION_BANNER_DURATION) { explosionBanner = null; return; }
+
+  let alpha = 1;
+  if (elapsed < 300) alpha = elapsed/300;
+  else if (elapsed > EXPLOSION_BANNER_DURATION - 600) {
+    alpha = Math.max(0, (EXPLOSION_BANNER_DURATION - elapsed) / 600);
+  }
+
+  ctx.save();
+  ctx.fillStyle = `rgba(4,8,17,${0.55*alpha})`;
+  ctx.fillRect(0,0,W,H);
+
+  ctx.textAlign='center';
+  ctx.fillStyle = `rgba(255,209,102,${alpha})`;
+  ctx.font = "800 26px 'Baloo 2', sans-serif";
+  ctx.fillText('💥 EXPLOSÃO! 💥', W/2, H/2 - 16);
+
+  ctx.font = "700 20px 'Baloo 2', sans-serif";
+  ctx.fillStyle = `rgba(255,248,236,${alpha})`;
+  ctx.fillText('@'+explosionBanner.name, W/2, H/2 + 20);
+  ctx.restore();
+}
+
+function draw(now) {
+  ctx.save();
+  if(screenShake > 0.1){
+    ctx.translate((Math.random()-.5)*screenShake, (Math.random()-.5)*screenShake);
+  }
+
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0, '#142850'); g.addColorStop(.55,'#3a6ea5'); g.addColorStop(1,'#f4a261');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+
+  // Sol com brilho suave, perto do horizonte
+  const sunX = W*0.78, sunY = H*0.32;
+  const sunGlow = ctx.createRadialGradient(sunX,sunY,0, sunX,sunY,90);
+  sunGlow.addColorStop(0,'#fff3d0aa'); sunGlow.addColorStop(1,'#fff3d000');
+  ctx.fillStyle = sunGlow;
+  ctx.beginPath(); ctx.arc(sunX,sunY,90,0,7); ctx.fill();
+  ctx.fillStyle = '#fff8ecdd';
+  ctx.beginPath(); ctx.arc(sunX,sunY,20,0,7); ctx.fill();
+
+  // Nuvens distantes (parallax, mais lentas e translúcidas)
+  ctx.fillStyle='#ffffff14';
+  for(const c of cloudsFar){
+    ctx.beginPath();
+    ctx.ellipse(c.x,c.y,50*c.s,18*c.s,0,0,7);
+    ctx.fill();
+  }
+
+  ctx.fillStyle='#ffffff22';
+  for(const c of clouds){
+    ctx.beginPath();
+    ctx.ellipse(c.x,c.y,50*c.s,18*c.s,0,0,7);
+    ctx.fill();
+  }
+
+  for(const k of kites.values()) drawKite(k, now);
+
+  for(const p of particles){
+    const a = 1 - p.t/p.life;
+    if(p.type==='spark'){
+      ctx.save(); ctx.translate(p.x, p.y);
+      ctx.strokeStyle=`rgba(255,255,255,${a})`; ctx.lineWidth=2;
+      for(let i=0;i<4;i++){
+        const ang = i*Math.PI/2;
+        ctx.beginPath(); ctx.moveTo(0,0);
+        ctx.lineTo(Math.cos(ang)*(4+p.t*30), Math.sin(ang)*(4+p.t*30)); ctx.stroke();
+      }
+      ctx.restore();
+    } else if(p.type==='burst'){
+      ctx.beginPath(); ctx.arc(p.x,p.y, 8+p.t*60, 0,7);
+      ctx.strokeStyle = p.color+Math.floor(a*255).toString(16).padStart(2,'0');
+      ctx.lineWidth=2; ctx.stroke();
+    } else if(p.type==='debris'){
+      ctx.fillStyle = p.color+Math.floor(a*255).toString(16).padStart(2,'0');
+      ctx.save(); ctx.translate(p.x+p.vx*p.t, p.y+p.vy*p.t+40*p.t*p.t); ctx.rotate(p.t*6);
+      ctx.fillRect(-5,-5,10,10); ctx.restore();
+    }
+  }
+
+  drawExplosionBanner(now);
+  ctx.restore();
+}
+requestAnimationFrame(loop);
+
+// ============================================================
+// CONEXÃO DE SOCKET COM O BACKEND
+// ============================================================
+const socket = (typeof io !== 'undefined') ? io() : null;
+
+function setStatus(connected, username) {
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  if(connected){
+    dot.className='status-dot live';
+    txt.textContent = `@${username}`;
+  } else {
+    dot.className='status-dot off';
+    txt.textContent = 'Desconectado';
+  }
+}
+
+if(socket) {
+  socket.on('status', data => setStatus(data.connected, data.username));
+  socket.on('chat', data => spawnKite(data.userId, data.user));
+  socket.on('gift', data => applyGift(data.userId, data.user, data.diamondCount||1, data.giftName||data.gift_name));
+  socket.on('like', data => applyLike(data.userId || data.uniqueId, data.user || data.uniqueId, data.likeCount||1));
+  socket.on('follow', data => applyFollow(data.userId, data.user));
+  // Se o seu backend souber buscar o catálogo oficial de presentes da conta
+  // (ex.: via biblioteca de conexão com a TikTok Live), ele pode emitir esse
+  // evento a qualquer momento — inclusive de novo, quando a TikTok atualizar
+  // o catálogo — e esta tela sincroniza automaticamente.
+  socket.on('giftCatalog', list => syncOfficialCatalog(list));
+  socket.on('connect', () => socket.emit('requestGiftCatalog'));
+  socket.on('license', data => applyLicenseState(data));
+  socket.on('licenseRevoked', () => showLockScreen('Sua chave foi desativada ou expirou.'));
+}
+
+// ============================================================
+// TELA DE CHAVE (licença)
+// ============================================================
+function formatExpiry(expiresAt) {
+  if (!expiresAt) return '';
+  const d = new Date(expiresAt);
+  return 'Válida até ' + d.toLocaleString('pt-BR');
+}
+
+function showLockScreen(errorMsg) {
+  document.getElementById('appRoot').classList.remove('unlocked');
+  document.getElementById('lockScreen').classList.remove('hidden');
+  document.getElementById('lockError').textContent = errorMsg || '';
+}
+
+function showApp(expiresAt) {
+  document.getElementById('lockScreen').classList.add('hidden');
+  document.getElementById('appRoot').classList.add('unlocked');
+  document.getElementById('lockExpiry').textContent = formatExpiry(expiresAt);
+}
+
+function applyLicenseState(data) {
+  if (data && data.licensed) {
+    showApp(data.expiresAt);
+  } else {
+    showLockScreen();
+  }
+}
+
+async function checkLicenseStatus() {
+  try {
+    const res = await fetch('/license/status');
+    const data = await res.json();
+    applyLicenseState(data);
+  } catch (e) {
+    showLockScreen('Não foi possível falar com o servidor. Verifique sua conexão.');
+  }
+}
+
+document.getElementById('lockUnlockBtn').onclick = async () => {
+  const key = document.getElementById('lockKeyInput').value.trim();
+  const errorEl = document.getElementById('lockError');
+  if (!key) { errorEl.textContent = 'Digite uma chave.'; return; }
+
+  errorEl.textContent = 'Verificando...';
+  try {
+    const res = await fetch('/license/activate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      showApp(data.expiresAt);
+    } else {
+      errorEl.textContent = data.error || 'Chave inválida.';
+    }
+  } catch (e) {
+    errorEl.textContent = 'Erro de conexão com o servidor.';
+  }
+};
+
+document.getElementById('lockKeyInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('lockUnlockBtn').click();
+});
+
+// checa o status assim que a página carrega, e a cada 30s
+// (isso garante que, se você desativar a chave, a tela trava mesmo
+// sem precisar do socket estar conectado)
+checkLicenseStatus();
+setInterval(checkLicenseStatus, 30000);
+
+// BOTÕES DE CONEXÃO
+document.getElementById('connectBtn').onclick = async () => {
+  const username = document.getElementById('tiktokUser').value.trim();
+  if(!username) return;
+  try {
+    await fetch('/connect', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({username})
+    });
+  } catch(e) { toast('⚠️ Erro de conexão com o backend.'); }
+};
+
+document.getElementById('disconnectBtn').onclick = async () => {
+  try { await fetch('/disconnect', {method:'POST'}); } catch(e){}
+};
+
+// CONTROLES DE SIMULAÇÃO/TESTE
+document.getElementById('simChatBtn').onclick = () => {
+  const user = document.getElementById('testUser').value.trim() || 'Teste';
+  spawnKite(user, user);
+};
+document.getElementById('simGift1Btn').onclick = () => {
+  const user = document.getElementById('testUser').value.trim() || 'Teste';
+  applyGift(user, user, 1, 'Rosa');
+};
+document.getElementById('simGift5Btn').onclick = () => {
+  const user = document.getElementById('testUser').value.trim() || 'Teste';
+  applyGift(user, user, 5, 'Rosquinha');
+};
+document.getElementById('simGift10Btn').onclick = () => {
+  const user = document.getElementById('testUser').value.trim() || 'Teste';
+  applyGift(user, user, 10, 'Foguetinho');
+};
+document.getElementById('simGift99Btn').onclick = () => {
+  const user = document.getElementById('testUser').value.trim() || 'Teste';
+  applyGift(user, user, 99, 'Universo');
+};
+document.getElementById('simLikeBtn').onclick = () => {
+  const user = document.getElementById('testUser').value.trim() || 'Teste';
+  applyLike(user, user, 15);
+};
+document.getElementById('simFollowBtn').onclick = () => {
+  const user = document.getElementById('testUser').value.trim() || 'Teste';
+  applyFollow(user, user);
+};
+document.getElementById('clearBtn').onclick = () => {
+  kites.clear();
+  cutsBoard.clear();
+  explosionBanner = null;
+  updateLeaderboard();
+};
+
+// ============================================================
+// PAINEL DE CONFIGURAÇÕES: abas, controles e persistência
+// ============================================================
+function switchTab(tab) {
+  const isControle = tab === 'controle';
+  document.getElementById('tabBtnControle').classList.toggle('active', isControle);
+  document.getElementById('tabBtnConfig').classList.toggle('active', !isControle);
+  document.getElementById('panelControle').classList.toggle('active', isControle);
+  document.getElementById('panelConfig').classList.toggle('active', !isControle);
+}
+document.getElementById('tabBtnControle').onclick = () => switchTab('controle');
+document.getElementById('tabBtnConfig').onclick = () => switchTab('config');
+
+function refreshConfigUI() {
+  document.getElementById('cfgVolFx').value = Math.round(settings.volumeFx*100);
+  document.getElementById('valVolFx').textContent = Math.round(settings.volumeFx*100)+'%';
+  document.getElementById('cfgSpeed').value = Math.round(settings.kiteSpeed*100);
+  document.getElementById('valSpeed').textContent = settings.kiteSpeed.toFixed(1)+'x';
+  document.getElementById('cfgChase').value = Math.round(settings.chaseAggro*100);
+  document.getElementById('valChase').textContent = Math.round(settings.chaseAggro*100)+'%';
+  document.getElementById('cfgMaxKites').value = settings.maxKites;
+  document.getElementById('valMaxKites').textContent = settings.maxKites;
+  document.getElementById('cfgTierCura').value = settings.tierCura;
+  document.getElementById('cfgTierLinha').value = settings.tierLinha;
+  document.getElementById('cfgTierEscudo').value = settings.tierEscudo;
+  document.getElementById('cfgTierExplosao').value = settings.tierExplosao;
+  document.getElementById('cfgAmbientToggle').textContent = settings.ambientWind ? '🔊 Desligar som ambiente' : '🔇 Ligar som ambiente';
+  renderGiftCatalog();
+}
+
+document.getElementById('cfgVolFx').oninput = (e) => {
+  settings.volumeFx = Number(e.target.value)/100;
+  document.getElementById('valVolFx').textContent = e.target.value+'%';
+  updateAmbientVolume();
+};
+document.getElementById('cfgSpeed').oninput = (e) => {
+  settings.kiteSpeed = Number(e.target.value)/100;
+  document.getElementById('valSpeed').textContent = settings.kiteSpeed.toFixed(1)+'x';
+};
+document.getElementById('cfgChase').oninput = (e) => {
+  settings.chaseAggro = Number(e.target.value)/100;
+  document.getElementById('valChase').textContent = e.target.value+'%';
+};
+document.getElementById('cfgMaxKites').oninput = (e) => {
+  settings.maxKites = Number(e.target.value);
+  document.getElementById('valMaxKites').textContent = settings.maxKites;
+};
+['cfgTierCura','cfgTierLinha','cfgTierEscudo','cfgTierExplosao'].forEach(id => {
+  document.getElementById(id).oninput = () => {
+    settings.tierCura = Math.max(1, Number(document.getElementById('cfgTierCura').value) || 1);
+    settings.tierLinha = Math.max(1, Number(document.getElementById('cfgTierLinha').value) || 1);
+    settings.tierEscudo = Math.max(1, Number(document.getElementById('cfgTierEscudo').value) || 1);
+    settings.tierExplosao = Math.max(1, Number(document.getElementById('cfgTierExplosao').value) || 1);
+    renderGiftCatalog();
+  };
+});
+document.getElementById('cfgAmbientToggle').onclick = () => {
+  settings.ambientWind = !settings.ambientWind;
+  if(settings.ambientWind) startAmbientWind(); else stopAmbientWind();
+  document.getElementById('cfgAmbientToggle').textContent = settings.ambientWind ? '🔊 Desligar som ambiente' : '🔇 Ligar som ambiente';
+};
+document.getElementById('cfgSyncBtn').onclick = () => {
+  if (socket) {
+    socket.emit('requestGiftCatalog');
+    toast('🔄 Pedido de sincronização enviado ao backend...');
+  } else {
+    toast('⚠️ Sem conexão com o backend para sincronizar.');
+  }
+};
+document.getElementById('cfgClearGiftsBtn').onclick = () => {
+  discoveredGifts.clear();
+  try { localStorage.removeItem('pipaGifts'); } catch(e) {}
+  renderGiftCatalog();
+};
+document.getElementById('cfgSaveBtn').onclick = () => {
+  saveSettings();
+  toast('💾 Configurações salvas!');
+};
+document.getElementById('cfgResetBtn').onclick = () => {
+  const wasAmbient = settings.ambientWind;
+  settings = { ...DEFAULT_SETTINGS, giftOverrides: {} };
+  saveSettings();
+  refreshConfigUI();
+  if(wasAmbient && !settings.ambientWind) stopAmbientWind();
+  toast('↩️ Configurações restauradas para o padrão.');
+};
+
+refreshConfigUI();
+if(settings.ambientWind){
+  // Alguns navegadores exigem uma interação antes de tocar áudio;
+  // liga assim que o streamer clicar em qualquer lugar da página.
+  document.addEventListener('click', () => { if(settings.ambientWind) startAmbientWind(); }, { once:true });
+}
+</script>
+</body>
+</html>

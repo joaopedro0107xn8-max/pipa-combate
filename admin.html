@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Admin — Chaves de Licença</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background:#0f1420; color:#eee; margin:0; padding:24px; }
+  h1 { font-size:20px; margin-bottom:4px; }
+  .sub { color:#9aa; font-size:13px; margin-bottom:24px; }
+  .card { background:#171e2e; border:1px solid #2a3346; border-radius:10px; padding:16px; margin-bottom:16px; }
+  label { font-size:12px; color:#9aa; display:block; margin-bottom:4px; }
+  input, select { background:#0f1420; border:1px solid #2a3346; color:#eee; padding:8px; border-radius:6px; font-size:13px; width:100%; margin-bottom:10px; }
+  button { background:#ffd166; color:#1a1200; border:none; padding:9px 14px; border-radius:6px; font-weight:700; cursor:pointer; font-size:13px; }
+  button.ghost { background:#2a3346; color:#eee; }
+  button.danger { background:#e63946; color:#fff; }
+  button:hover { filter:brightness(1.08); }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th, td { text-align:left; padding:8px; border-bottom:1px solid #2a3346; }
+  .badge { padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700; }
+  .badge.ok { background:#06d6a030; color:#06d6a0; }
+  .badge.bad { background:#e6394630; color:#ff8a94; }
+  .row { display:flex; gap:8px; }
+  .row > * { flex:1; }
+  #loginBox { max-width:340px; margin: 80px auto; }
+  #app { display:none; max-width:900px; margin: 0 auto; }
+  .keycell { font-family: monospace; font-size:13px; }
+  .actions button { margin-right:6px; padding:5px 10px; font-size:11.5px; }
+  #msg { font-size:12.5px; color:#ff8a94; min-height:16px; }
+</style>
+</head>
+<body>
+
+  <div id="loginBox" class="card">
+    <h1>🔑 Painel de Licenças</h1>
+    <div class="sub">Entre com sua senha de admin para gerenciar as chaves.</div>
+    <label>Senha de admin</label>
+    <input type="password" id="secretInput" placeholder="Senha" />
+    <button id="loginBtn" style="width:100%">Entrar</button>
+    <div id="loginMsg" style="color:#ff8a94; font-size:12.5px; margin-top:8px;"></div>
+  </div>
+
+  <div id="app">
+    <h1>🔑 Painel de Licenças</h1>
+    <div class="sub">Gere chaves para liberar o programa e desative quando quiser.</div>
+
+    <div class="card">
+      <label>Gerar nova chave</label>
+      <div class="row">
+        <div>
+          <label>Duração</label>
+          <select id="durationSelect">
+            <option value="24h">24 horas</option>
+            <option value="1w">1 semana</option>
+            <option value="1m">1 mês</option>
+            <option value="custom">Personalizado (horas)</option>
+          </select>
+        </div>
+        <div id="customWrap" style="display:none">
+          <label>Horas</label>
+          <input type="number" id="customHours" min="1" value="1" />
+        </div>
+      </div>
+      <label>Observação (opcional, ex: nome do cliente)</label>
+      <input type="text" id="noteInput" placeholder="ex: João - pacote mensal" />
+      <button id="generateBtn">➕ Gerar chave</button>
+      <div id="msg"></div>
+    </div>
+
+    <div class="card">
+      <label>Chaves geradas</label>
+      <table>
+        <thead>
+          <tr><th>Chave</th><th>Nota</th><th>Expira em</th><th>Status</th><th>Ações</th></tr>
+        </thead>
+        <tbody id="keysBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+let SECRET = '';
+
+document.getElementById('durationSelect').onchange = (e) => {
+  document.getElementById('customWrap').style.display = e.target.value === 'custom' ? 'block' : 'none';
+};
+
+document.getElementById('loginBtn').onclick = async () => {
+  SECRET = document.getElementById('secretInput').value;
+  const ok = await refreshList();
+  if (ok) {
+    sessionStorage.setItem('adminSecret', SECRET);
+    document.getElementById('loginBox').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+  } else {
+    document.getElementById('loginMsg').textContent = 'Senha incorreta.';
+  }
+};
+
+async function api(pathName, body) {
+  const res = await fetch(pathName, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, secret: SECRET })
+  });
+  return res.json();
+}
+
+async function refreshList() {
+  const data = await api('/admin/list', {});
+  if (!data.success) return false;
+
+  const tbody = document.getElementById('keysBody');
+  tbody.innerHTML = '';
+  data.keys.forEach(k => {
+    const tr = document.createElement('tr');
+    const expDate = k.expiresAt ? new Date(k.expiresAt).toLocaleString('pt-BR') : '-';
+    const isValid = k.status.valid;
+    tr.innerHTML = `
+      <td class="keycell">${k.key}</td>
+      <td>${k.note || ''}</td>
+      <td>${expDate}</td>
+      <td><span class="badge ${isValid ? 'ok' : 'bad'}">${isValid ? 'ATIVA' : (k.status.reason === 'expired' ? 'EXPIRADA' : 'DESATIVADA')}</span></td>
+      <td class="actions"></td>
+    `;
+    const actionsTd = tr.querySelector('.actions');
+
+    if (k.active) {
+      const btn = document.createElement('button');
+      btn.className = 'danger';
+      btn.textContent = 'Desativar';
+      btn.onclick = async () => { await api('/admin/deactivate', { key: k.key }); refreshList(); };
+      actionsTd.appendChild(btn);
+    } else {
+      const btn = document.createElement('button');
+      btn.className = 'ghost';
+      btn.textContent = 'Reativar';
+      btn.onclick = async () => { await api('/admin/activate', { key: k.key }); refreshList(); };
+      actionsTd.appendChild(btn);
+    }
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'ghost';
+    delBtn.textContent = 'Apagar';
+    delBtn.onclick = async () => { await api('/admin/delete', { key: k.key }); refreshList(); };
+    actionsTd.appendChild(delBtn);
+
+    tbody.appendChild(tr);
+  });
+  return true;
+}
+
+document.getElementById('generateBtn').onclick = async () => {
+  const duration = document.getElementById('durationSelect').value;
+  const customHours = document.getElementById('customHours').value;
+  const note = document.getElementById('noteInput').value;
+
+  const data = await api('/admin/generate', { duration, customHours, note });
+  const msg = document.getElementById('msg');
+  if (data.success) {
+    msg.style.color = '#06d6a0';
+    msg.textContent = `Chave gerada: ${data.key}`;
+    refreshList();
+  } else {
+    msg.style.color = '#ff8a94';
+    msg.textContent = data.error || 'Erro ao gerar chave.';
+  }
+};
+
+// tenta reaproveitar sessao
+const saved = sessionStorage.getItem('adminSecret');
+if (saved) {
+  SECRET = saved;
+  refreshList().then(ok => {
+    if (ok) {
+      document.getElementById('loginBox').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+    }
+  });
+}
+</script>
+</body>
+</html>
